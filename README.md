@@ -1,8 +1,8 @@
-# Eventbridge ScheduledEvent Processor
+# Scheduled Event Schedulers
 
 ## ✨ Overview
 
-Sometime we need to schedule events/jobs to be carried out in the future at varying times (versus fixed times).  This project contains two examples of how to do this using Spring Boot:
+Sometime we need to schedule events/jobs to be carried out in the future at varying times (versus fixed).  This project contains two examples of how to do this using Spring Boot:
 - One using AWS EventBridge Scheduled Events
 - One using Quartz Scheduler
 
