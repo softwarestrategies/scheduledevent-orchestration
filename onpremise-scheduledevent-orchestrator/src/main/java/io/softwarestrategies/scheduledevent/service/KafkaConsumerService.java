@@ -8,6 +8,7 @@ import io.softwarestrategies.scheduledevent.dto.KafkaEventMessage;
 import io.softwarestrategies.scheduledevent.repository.ScheduledEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
@@ -15,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Kafka consumer service that handles the second phase of ingestion:
@@ -35,8 +38,18 @@ public class KafkaConsumerService {
 	private final Counter eventsPersistedCounter;
 	private final Timer databaseBatchTimer;
 
-	// Cache for deduplication within a short time window
-	private final Set<String> recentMessageIds = ConcurrentHashMap.newKeySet();
+	/**
+	 * Versus simply using an LRU
+	 */
+	private final Set<String> recentMessageIds = Collections.newSetFromMap(
+			Collections.synchronizedMap(new LinkedHashMap<>(MAX_CACHE_SIZE, 0.75f, true) {
+				@Override
+				protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+					return size() > MAX_CACHE_SIZE;
+				}
+			})
+	);
+
 	private static final int MAX_CACHE_SIZE = 100000;
 
 	/**
@@ -81,18 +94,26 @@ public class KafkaConsumerService {
 			}
 		}
 
-		// Batch save to database
-		if (!eventsToSave.isEmpty()) {
+		/**
+		 * There is a tradeoff here versus using a single batch insert, but with individual save() calls you can isolate
+		 * failures. For the deduplication use case this is the right call since DLQ misrouting is worse than slightly
+		 * lower insert throughput.
+		 */
+		for (ScheduledEvent event : eventsToSave) {
 			try {
-				scheduledEventRepository.saveAll(eventsToSave);
-				eventsPersistedCounter.increment(eventsToSave.size());
-				log.debug("Persisted {} events to database", eventsToSave.size());
+				scheduledEventRepository.save(event);
+				eventsPersistedCounter.increment();
+			} catch (DataIntegrityViolationException e) {
+				// Duplicate — constraint fired. This is expected across instances.
+				log.debug("Duplicate event skipped (constraint): externalJobId={}, source={}",
+						event.getExternalJobId(), event.getSource());
 			} catch (Exception e) {
-				log.error("Failed to batch save events to database", e);
-				// Send all to DLQ on batch failure
-				for (KafkaEventMessage msg : messages) {
-					kafkaProducerService.sendToDlq(msg, "Database batch save failed: " + e.getMessage());
-				}
+				log.error("Failed to persist event: externalJobId={}", event.getExternalJobId(), e);
+				// Find and DLQ the original message for this event
+				messages.stream()
+						.filter(m -> m.getExternalJobId().equals(event.getExternalJobId()))
+						.findFirst()
+						.ifPresent(m -> kafkaProducerService.sendToDlq(m, "Persist failed: " + e.getMessage()));
 			}
 		}
 
@@ -126,11 +147,7 @@ public class KafkaConsumerService {
 	 * Track message ID for deduplication.
 	 */
 	private void trackMessageId(String messageId) {
-		// Clean up cache if too large
-		if (recentMessageIds.size() > MAX_CACHE_SIZE) {
-			recentMessageIds.clear();
-			log.debug("Cleared message ID cache due to size limit");
-		}
+		// LRU eviction is handled automatically by the LinkedHashMap removeEldestEntry policy
 		recentMessageIds.add(messageId);
 	}
 
