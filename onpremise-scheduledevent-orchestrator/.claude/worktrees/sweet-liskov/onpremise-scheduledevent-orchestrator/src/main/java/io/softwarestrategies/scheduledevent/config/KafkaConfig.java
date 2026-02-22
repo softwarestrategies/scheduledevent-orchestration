@@ -85,24 +85,6 @@ public class KafkaConfig {
 				.build();
 	}
 
-	@Bean
-	public NewTopic executionHttpTopic() {
-		return TopicBuilder.name(executionHttpTopic)
-				.partitions(partitions)
-				.replicas(replicationFactor)
-				.config("retention.ms", String.valueOf(24 * 60 * 60 * 1000L)) // 1 day
-				.build();
-	}
-
-	@Bean
-	public NewTopic executionKafkaTopic() {
-		return TopicBuilder.name(executionKafkaTopic)
-				.partitions(partitions)
-				.replicas(replicationFactor)
-				.config("retention.ms", String.valueOf(24 * 60 * 60 * 1000L)) // 1 day
-				.build();
-	}
-
 	// ==================== Producer Configuration ====================
 
 	@Bean
