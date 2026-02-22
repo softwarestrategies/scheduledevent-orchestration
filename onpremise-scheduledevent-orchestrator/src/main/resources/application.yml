@@ -60,3 +60,8 @@ app:
   http-client:
     connect-timeout-ms: 5000
     read-timeout-ms: 30000
+  scheduler:
+    poll-interval-ms: 1000
+    batch-size: 100
+  cleanup:
+    batch-size: 10000

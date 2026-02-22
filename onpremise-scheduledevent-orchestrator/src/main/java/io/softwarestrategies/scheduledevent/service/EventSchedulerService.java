@@ -2,6 +2,8 @@ package io.softwarestrategies.scheduledevent.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class EventSchedulerService {
 
+	private final Executor eventProcessingExecutor;
 	private final ScheduledEventRepository scheduledEventRepository;
 	private final EventDeliveryService eventDeliveryService;
 	private final EventPersistenceService eventPersistenceService;
@@ -41,10 +44,13 @@ public class EventSchedulerService {
 	}
 
 	/**
-	 * Main polling loop that fetches and processes due events.
-	 * Runs at configured interval using virtual threads for execution.
+	 * Main polling loop that fetches and processes due events.  Runs at configured interval using virtual threads for
+	 * execution.
+	 *
+	 * Using fixedRateString instead of fixedDelayString so that the necxt poll starts 1000ms AFTER the previous one
+	 * started and not after it finished.
 	 */
-	@Scheduled(fixedDelayString = "${app.scheduler.poll-interval-ms:1000}")
+	@Scheduled(fixedRateString = "${app.scheduler.poll-interval-ms:1000}")
 	public void pollAndExecuteEvents() {
 		if (!running.get()) {
 			return;
@@ -59,9 +65,11 @@ public class EventSchedulerService {
 
 			log.debug("Fetched {} events for execution", events.size());
 
-			for (ScheduledEvent event : events) {
-				processEvent(event);
-			}
+			events.stream()
+					.map(event -> CompletableFuture.runAsync(
+							() -> processEvent(event), eventProcessingExecutor))
+					.toList()
+					.forEach(CompletableFuture::join);
 
 		} catch (Exception e) {
 			log.error("Error in scheduler poll loop", e);
