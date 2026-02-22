@@ -32,7 +32,6 @@ public class EventDeliveryService {
 	private final Timer eventDeliveryTimer;
 
 	private static final Set<Integer> RETRIABLE_STATUS_CODES = Set.of(408, 429, 500, 502, 503, 504);
-	private static final int MAX_RETRIES = 2;
 
 	/**
 	 * Deliver an event to its destination.
@@ -56,45 +55,31 @@ public class EventDeliveryService {
 	private DeliveryResult deliverViaHttp(ScheduledEvent event) {
 		httpDeliveryCounter.increment();
 
-		Exception lastException = null;
+		try {
+			ResponseEntity<Void> response = restClient.post()
+					.uri(event.getDestination())
+					.contentType(MediaType.APPLICATION_JSON)
+					.body(event.getPayload())
+					.retrieve()
+					.toBodilessEntity();
 
-		for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-			try {
-				ResponseEntity<Void> response = restClient.post()
-						.uri(event.getDestination())
-						.contentType(MediaType.APPLICATION_JSON)
-						.body(event.getPayload())
-						.retrieve()
-						.toBodilessEntity();
+			log.debug("HTTP delivery successful. EventId: {}, Status: {}",
+					event.getId(), response.getStatusCode());
+			return DeliveryResult.ofSuccess();
 
-				log.debug("HTTP delivery successful. EventId: {}, Status: {}",
-						event.getId(), response.getStatusCode());
-				return DeliveryResult.ofSuccess();
+		} catch (RestClientResponseException ex) {
+			String error = String.format("HTTP %d: %s", ex.getStatusCode().value(), ex.getStatusText());
+			boolean retriable = isRetriableStatusCode(ex.getStatusCode().value());
+			log.warn("HTTP delivery failed. EventId: {}, Retriable: {}, Error: {}",
+					event.getId(), retriable, error);
+			return DeliveryResult.ofFailure(error, retriable);
 
-			} catch (RestClientResponseException ex) {
-				lastException = ex;
-				if (!isRetriableStatusCode(ex.getStatusCode().value())) {
-					break;  // Non-retriable error, don't retry
-				}
-				if (attempt < MAX_RETRIES) {
-					sleep(500 * (attempt + 1));  // Backoff
-				}
-			} catch (Exception ex) {
-				lastException = ex;
-				if (!isRetriableException(ex)) {
-					break;
-				}
-				if (attempt < MAX_RETRIES) {
-					sleep(500 * (attempt + 1));
-				}
-			}
+		} catch (Exception ex) {
+			boolean retriable = isRetriableException(ex);
+			log.warn("HTTP delivery failed. EventId: {}, Retriable: {}, Error: {}",
+					event.getId(), retriable, ex.getMessage());
+			return DeliveryResult.ofFailure(ex.getMessage(), retriable);
 		}
-
-		String error = extractErrorMessage(lastException);
-		boolean retriable = isRetriable(lastException);
-		log.warn("HTTP delivery failed. EventId: {}, Retriable: {}, Error: {}",
-				event.getId(), retriable, error);
-		return DeliveryResult.ofFailure(error, retriable);
 	}
 
 	/**
