@@ -13,7 +13,7 @@ import lombok.RequiredArgsConstructor;
 @RestController
 @RequestMapping("/api/v1/test-events")
 @RequiredArgsConstructor
-public class EventController {
+public class TestEventController {
 
 	/**
 	 * Process Genesys-generated events pushed to the backend via AWS EventBridge, AWS Lambda and Orchestration Service
