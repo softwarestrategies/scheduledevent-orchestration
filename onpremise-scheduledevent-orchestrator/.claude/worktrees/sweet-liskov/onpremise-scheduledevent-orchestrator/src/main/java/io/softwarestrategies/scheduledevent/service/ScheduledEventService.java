@@ -1,7 +1,5 @@
 package io.softwarestrategies.scheduledevent.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.softwarestrategies.scheduledevent.domain.EventStatus;
 import io.softwarestrategies.scheduledevent.domain.ScheduledEvent;
 import io.softwarestrategies.scheduledevent.dto.*;
@@ -14,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,7 +28,6 @@ public class ScheduledEventService {
 
 	private final KafkaProducerService kafkaProducerService;
 	private final ScheduledEventRepository scheduledEventRepository;
-	private final ObjectMapper objectMapper;
 
 	/**
 	 * Submit a single scheduled event.
@@ -41,7 +37,6 @@ public class ScheduledEventService {
 	 * @return The generated message ID
 	 */
 	public CompletableFuture<String> submitEvent(ScheduledEventRequest request) {
-		validateRequest(request);
 		return kafkaProducerService.sendEventAsync(request);
 	}
 
@@ -58,16 +53,7 @@ public class ScheduledEventService {
 
 		for (int i = 0; i < batchRequest.getEvents().size(); i++) {
 			ScheduledEventRequest request = batchRequest.getEvents().get(i);
-			try {
-				validateRequest(request);
-				futures.add(kafkaProducerService.sendEventAsync(request));
-			} catch (Exception e) {
-				rejectedEvents.add(BatchScheduledEventResponse.RejectedEvent.builder()
-						.index(i)
-						.externalJobId(request.getExternalJobId())
-						.reason(e.getMessage())
-						.build());
-			}
+			futures.add(kafkaProducerService.sendEventAsync(request));
 		}
 
 		return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
@@ -76,7 +62,7 @@ public class ScheduledEventService {
 						try {
 							acceptedIds.add(future.join());
 						} catch (Exception e) {
-							// Already handled above
+							// Kafka send failure — event was not accepted
 						}
 					}
 
@@ -186,41 +172,6 @@ public class ScheduledEventService {
 		}
 
 		return statistics;
-	}
-
-	/**
-	 * Validate event request.
-	 */
-	private void validateRequest(ScheduledEventRequest request) {
-		if (request.getScheduledAt().isBefore(Instant.now())) {
-			throw new ScheduledEventException("Scheduled time must be in the future", "INVALID_SCHEDULE_TIME");
-		}
-
-		// Validate payload is valid JSON
-		if (request.getPayload() != null) {
-			try {
-				objectMapper.writeValueAsString(request.getPayload());
-			} catch (JsonProcessingException e) {
-				throw new ScheduledEventException("Invalid payload JSON", "INVALID_PAYLOAD");
-			}
-		}
-
-		// Validate destination format based on delivery type
-		switch (request.getDeliveryType()) {
-			case HTTP -> {
-				if (!request.getDestination().startsWith("http://") &&
-						!request.getDestination().startsWith("https://")) {
-					throw new ScheduledEventException(
-							"HTTP destination must be a valid URL", "INVALID_DESTINATION");
-				}
-			}
-			case KAFKA -> {
-				if (request.getDestination().contains(" ")) {
-					throw new ScheduledEventException(
-							"Kafka topic name cannot contain spaces", "INVALID_DESTINATION");
-				}
-			}
-		}
 	}
 
 	/**

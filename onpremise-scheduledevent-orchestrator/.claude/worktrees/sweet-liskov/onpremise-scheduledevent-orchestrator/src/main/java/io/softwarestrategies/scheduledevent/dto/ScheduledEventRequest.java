@@ -52,10 +52,16 @@ public class ScheduledEventRequest {
 	private DeliveryType deliveryType;
 
 	/**
-	 * Destination URL (for HTTP) or topic name (for KAFKA)
+	 * Destination URL (for HTTP) or topic name (for KAFKA).
+	 * HTTP destinations must start with http:// or https://.
+	 * Kafka topic names must not contain spaces.
 	 */
 	@NotBlank(message = "Destination is required")
 	@Size(max = 2048, message = "Destination must not exceed 2048 characters")
+	@Pattern(
+			regexp = "^(https?://.+|\\S+)$",
+			message = "HTTP destination must start with http:// or https://; Kafka topic name must not contain spaces"
+	)
 	private String destination;
 
 	/**
