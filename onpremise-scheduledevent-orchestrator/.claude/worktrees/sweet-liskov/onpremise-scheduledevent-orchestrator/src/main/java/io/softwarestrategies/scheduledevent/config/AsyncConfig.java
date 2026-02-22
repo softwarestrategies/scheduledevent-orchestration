@@ -1,55 +1,36 @@
 package io.softwarestrategies.scheduledevent.config;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Configuration for async processing and virtual threads.
+ * Configuration for async processing using virtual threads.
+ *
+ * Virtual threads are created per-task with no pool cap — pooling them is an anti-pattern
+ * since they are cheap (~1KB each) and managed by the JVM, not an OS thread pool.
  */
 @Configuration
 @EnableAsync
 public class AsyncConfig {
 
-	@Value("${app.scheduler.executor-threads:20}")
-	private int executorThreads;
-
 	/**
-	 * Task executor for async event processing.
-	 * Uses virtual threads for optimal performance with I/O-bound tasks.
+	 * Executor for async event delivery. A new virtual thread is created per task,
+	 * so delivery of 100 events in a batch fires all 100 concurrently with no queuing.
 	 */
 	@Bean(name = "eventProcessingExecutor")
-	public Executor eventProcessingExecutor() {
-		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(executorThreads);
-		executor.setMaxPoolSize(executorThreads * 2);
-		executor.setQueueCapacity(1000);
-		executor.setThreadNamePrefix("event-processor-");
-		executor.setRejectedExecutionHandler((r, e) -> {
-			// Log and potentially queue to Kafka DLQ
-			throw new RuntimeException("Task rejected, executor queue is full");
-		});
-		executor.setVirtualThreads(true); // Enable virtual threads
-		executor.initialize();
-		return executor;
+	public ExecutorService eventProcessingExecutor() {
+		return Executors.newVirtualThreadPerTaskExecutor();
 	}
 
 	/**
-	 * Task executor for scheduled tasks.
+	 * Executor for scheduled tasks.
 	 */
 	@Bean(name = "schedulerExecutor")
-	public Executor schedulerExecutor() {
-		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(5);
-		executor.setMaxPoolSize(10);
-		executor.setQueueCapacity(100);
-		executor.setThreadNamePrefix("scheduler-");
-		executor.setVirtualThreads(true);
-		executor.initialize();
-		return executor;
+	public ExecutorService schedulerExecutor() {
+		return Executors.newVirtualThreadPerTaskExecutor();
 	}
 }
