@@ -110,7 +110,7 @@ public class EventSchedulerService {
 		Instant now = Instant.now();
 		int released = scheduledEventRepository.releaseExpiredLocks(now);
 		if (released > 0) {
-			log.info("Released {} expired locks", released);
+			log.warn("Released {} stale locks — worker(s) may have crashed", released);
 		}
 	}
 }

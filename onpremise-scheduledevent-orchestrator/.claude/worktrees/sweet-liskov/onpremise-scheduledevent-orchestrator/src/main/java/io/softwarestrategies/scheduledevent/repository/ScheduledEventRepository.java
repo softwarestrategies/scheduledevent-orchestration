@@ -33,13 +33,16 @@ public interface ScheduledEventRepository extends JpaRepository<ScheduledEvent, 
 	 * @return List of events ready for processing
 	 */
 	@Query(value = """
-            SELECT * FROM scheduled_events
-            WHERE status = :status
-            AND scheduled_at <= :scheduledBefore
-            AND (lock_expires_at IS NULL OR lock_expires_at < :now)
-            ORDER BY scheduled_at ASC
-            LIMIT :limit
-            FOR UPDATE SKIP LOCKED
+				SELECT * FROM scheduled_events
+				WHERE scheduled_at <= :scheduledBefore
+				AND (
+    				(status = 'PENDING' AND (lock_expires_at IS NULL OR lock_expires_at < :now))
+    				OR
+    				(status = 'PROCESSING' AND lock_expires_at < :now)
+				)
+				ORDER BY scheduled_at ASC
+				LIMIT :limit
+				FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
 	List<ScheduledEvent> findAndLockEventsForProcessing(
 			@Param("status") String status,
