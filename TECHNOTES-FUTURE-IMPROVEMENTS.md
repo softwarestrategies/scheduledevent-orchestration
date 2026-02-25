@@ -6,8 +6,6 @@
 
 - No exponential backoff on retries — currently just increments retryCount. Under load spikes, retries all fire ASAP and compound the problem. Recommend adding nextRetryAt with backoff (e.g. 2^retryCount * 30s).
 
-- Lock expiration (5 min) is hardcoded — should be in application.yml alongside the other tunable properties.
-
 - Admin cleanup endpoint has no auth — I saw this was added in a recent commit (d475962), but worth confirming the Basic Auth is correctly wired in the security config.
 
 - acks: 0 in dev profile — fire-and-forget means events can silently drop. Fine for dev, but worth a comment to ensure it never bleeds into prod config accidentally.

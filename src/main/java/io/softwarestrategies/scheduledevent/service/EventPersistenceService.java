@@ -29,6 +29,9 @@ public class EventPersistenceService {
 	@Value("${app.scheduler.batch-size:100}")
 	private int batchSize;
 
+	@Value("${app.scheduler.lock-duration-minutes:5")
+	private int lockDurationMinutes;
+
 	private String workerId;
 
 	@PostConstruct
@@ -60,7 +63,7 @@ public class EventPersistenceService {
 		log.debug("Found {} events ready for execution", events.size());
 
 		// Acquire locks on fetched events
-		Instant lockExpiry = now.plus(Duration.ofMinutes(5));
+		Instant lockExpiry = now.plus(Duration.ofMinutes(lockDurationMinutes));
 		for (ScheduledEvent event : events) {
 			event.acquireLock(workerId, lockExpiry);
 		}

@@ -66,6 +66,7 @@ app:
   scheduler:
     poll-interval-ms: 1000
     batch-size: 100
+    lock-duration-minutes: 5
   cleanup:
     batch-size: 10000
 
