@@ -29,7 +29,7 @@ public class EventPersistenceService {
 	@Value("${app.scheduler.batch-size:100}")
 	private int batchSize;
 
-	@Value("${app.scheduler.lock-duration-minutes:5")
+	@Value("${app.scheduler.lock-duration-minutes:5}")
 	private int lockDurationMinutes;
 
 	private String workerId;
